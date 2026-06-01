@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import re
 import sys
+from typing import Any
 from pathlib import Path
 
 # ANSI color codes for report mode
@@ -27,26 +29,26 @@ COLOR_RESET = "\033[0m"
 RE_CYRILLIC = re.compile(r"[а-яА-ЯёЁ]")
 RE_LATIN = re.compile(r"[a-zA-Z]")
 RE_CJK = re.compile(
-    r"[\u4e00-\u9fff"  # CJK Unified Ideographs
-    r"\u3040-\u309f"  # Hiragana
-    r"\u30a0-\u30ff"  # Katakana
-    r"\uac00-\ud7af"  # Hangul Syllables
-    r"\u1100-\u11ff]"  # Hangul Jamo
+    r"[\u4e00-\u9fff"      # CJK Unified Ideographs
+    r"\u3400-\u4dbf"      # CJK Unified Ideographs Extension A
+    r"\u3040-\u309f"      # Hiragana
+    r"\u30a0-\u30ff"      # Katakana
+    r"\uac00-\ud7af"      # Hangul Syllables
+    r"\u1100-\u11ff"      # Hangul Jamo
+    r"\u3130-\u318f"      # Hangul Compatibility Jamo
+    r"\u3000-\u303f"      # CJK Symbols and Punctuation
+    r"\uff00-\uffef]"     # Halfwidth and Fullwidth Forms
 )
 
 # LLM-typical artifacts
 RE_CODEBLOCK = re.compile(r"```[a-zA-Z]*")
 RE_PLACEHOLDER = re.compile(
-    r"\[(insert|placeholder|todo|name|date|x)\]|"
-    r"<(insert|placeholder|todo|name|date|x)>|"
-    r"\b(todo|placeholder|tbd)\b",
+    r"\[(?:insert|placeholder|todo|name|date|x)\]|"
+    r"<(?:insert|placeholder|todo|name|date|x)>|"
+    r"\b(?:todo|placeholder|tbd)\b",
     re.IGNORECASE
 )
 RE_LOOP = re.compile(r"\b(\w+)(?:\s+\1){2,}\b", re.IGNORECASE)  # word repeated 3+ times
-
-
-def is_cjk(char: str) -> bool:
-    return bool(RE_CJK.match(char))
 
 
 def check_word_mixed(word: str) -> bool:
@@ -66,7 +68,7 @@ def analyze_text(text: str, check_mixed: bool = True, check_cjk: bool = True, ch
 
     # 1. Check CJK characters
     if check_cjk:
-        cjk_found = [c for c in text if is_cjk(c)]
+        cjk_found = RE_CJK.findall(text)
         if cjk_found:
             violations.append({
                 "type": "cjk",
@@ -107,12 +109,13 @@ def analyze_text(text: str, check_mixed: bool = True, check_cjk: bool = True, ch
             })
 
         # Check repetition loops
-        loop_matches = RE_LOOP.findall(text)
-        if loop_matches:
+        loop_matches_full = [m.group(0) for m in RE_LOOP.finditer(text)]
+        if loop_matches_full:
+            repeated_word = RE_LOOP.search(text).group(1)
             violations.append({
                 "type": "llm_loop",
-                "message": f"Repetitive word loops detected (e.g. repeating '{loop_matches[0]}')",
-                "match": loop_matches
+                "message": f"Repetitive word loops detected (e.g. repeating '{repeated_word}')",
+                "match": loop_matches_full
             })
 
     return violations
@@ -149,17 +152,18 @@ def format_highlighted(text: str, violations: list[dict]) -> str:
                     colored_word += f"{COLOR_RED}{COLOR_BOLD}{c}{COLOR_RESET}"
                 else:
                     colored_word += c
-            # Replace the word in the highlighted text
-            highlighted = re.sub(r"\b" + re.escape(word) + r"\b", colored_word, highlighted)
+            # Replace the word in the highlighted text (use lambda to avoid backslash escaping issues)
+            highlighted = re.sub(r"\b" + re.escape(word) + r"\b", lambda m: colored_word, highlighted)
 
     # Highlight LLM loop or code blocks if present
     for v in violations:
-        if v["type"] == "llm_artifact":
-            highlighted = f"{COLOR_BLUE}{COLOR_BOLD}[LLM Artifact: {text}]{COLOR_RESET}"
-            break
-        elif v["type"] == "llm_loop":
-            highlighted = f"{COLOR_BLUE}{COLOR_BOLD}[LLM Loop: {text}]{COLOR_RESET}"
-            break
+        if v["type"] in ("llm_artifact", "llm_loop"):
+            for match_str in v["match"]:
+                if isinstance(match_str, tuple):
+                    match_str = next((s for s in match_str if s), "")
+                if match_str:
+                    colored_match = f"{COLOR_BLUE}{COLOR_BOLD}{match_str}{COLOR_RESET}"
+                    highlighted = re.sub(re.escape(match_str), lambda m: colored_match, highlighted, flags=re.IGNORECASE)
 
     return highlighted
 
@@ -190,7 +194,7 @@ def process_txt(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, 
 
 
 def process_csv(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, check_llm: bool) -> list[list[str]] | None:
-    reader = csv.reader(input_data.splitlines())
+    reader = csv.reader(io.StringIO(input_data))
     clean_rows = []
     has_violations_any = False
 
@@ -307,6 +311,10 @@ def main() -> int:
         help="Output path for sanitized data (required for clean mode, defaults to stdout)"
     )
     parser.add_argument(
+        "-f", "--format", choices=["txt", "csv", "json"], default=None,
+        help="Explicit input format. Optional for files, highly recommended for stdin ('-')."
+    )
+    parser.add_argument(
         "--check-cjk", action="store_true", default=True,
         help="Enable CJK character checks (default: True)"
     )
@@ -336,7 +344,7 @@ def main() -> int:
             parser.print_help()
             return 0
         input_data = sys.stdin.read()
-        file_ext = ".txt"
+        file_ext = "." + (args.format or "txt")
     else:
         path = Path(args.input)
         if not path.exists():
@@ -344,7 +352,7 @@ def main() -> int:
             return 2
         with path.open("r", encoding="utf-8") as f:
             input_data = f.read()
-        file_ext = path.suffix.lower()
+        file_ext = args.format or path.suffix.lower()
 
     if args.mode == "clean" and not args.output:
         print("ERROR: --output path is required when running in 'clean' mode.", file=sys.stderr)
