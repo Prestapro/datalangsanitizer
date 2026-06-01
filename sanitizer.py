@@ -61,12 +61,27 @@ def check_word_mixed(word: str) -> bool:
     return has_cyr and has_lat
 
 
-LATIN_TO_CYRILLIC_HOMOGLYPHS = {
-    'a': 'а', 'c': 'с', 'e': 'е', 'o': 'о', 'p': 'р', 'x': 'х', 'y': 'у',
-    'A': 'А', 'B': 'В', 'C': 'С', 'E': 'Е', 'H': 'Н', 'K': 'К', 'M': 'М',
-    'O': 'О', 'P': 'Р', 'T': 'Т', 'X': 'Х', 'Y': 'У'
+LATIN_TO_CYRILLIC_MAP = {
+    # Lowercase homoglyphs and keyboard near-matches
+    'a': 'а', 'b': 'б', 'c': 'с', 'd': 'д', 'e': 'е', 'g': 'г', 'h': 'х',
+    'i': 'и', 'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о', 'p': 'р',
+    'r': 'р', 's': 'с', 't': 'т', 'u': 'у', 'v': 'в', 'x': 'х', 'y': 'у', 'z': 'з',
+    # Uppercase homoglyphs and keyboard near-matches
+    'A': 'А', 'B': 'В', 'C': 'С', 'D': 'Д', 'E': 'Е', 'G': 'Г', 'H': 'Н',
+    'I': 'И', 'K': 'К', 'L': 'Л', 'M': 'М', 'N': 'Н', 'O': 'О', 'P': 'Р',
+    'R': 'Р', 'S': 'С', 'T': 'Т', 'U': 'У', 'V': 'В', 'X': 'Х', 'Y': 'У', 'Z': 'З'
 }
-CYRILLIC_TO_LATIN_HOMOGLYPHS = {v: k for k, v in LATIN_TO_CYRILLIC_HOMOGLYPHS.items()}
+
+CYRILLIC_TO_LATIN_MAP = {
+    # Lowercase homoglyphs and keyboard near-matches
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'з': 'z',
+    'и': 'i', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'р': 'p',
+    'с': 'c', 'т': 't', 'у': 'y', 'х': 'x',
+    # Uppercase homoglyphs and keyboard near-matches
+    'А': 'A', 'В': 'B', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'З': 'Z', 'И': 'I',
+    'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'Р': 'R', 'С': 'C',
+    'Т': 'T', 'У': 'Y', 'Х': 'X'
+}
 
 
 def fix_word_homoglyphs(word: str) -> str:
@@ -81,8 +96,8 @@ def fix_word_homoglyphs(word: str) -> str:
         # Dominant script is Cyrillic, replace Latin homoglyphs with Cyrillic
         fixed_chars = []
         for char in word:
-            if char in LATIN_TO_CYRILLIC_HOMOGLYPHS:
-                fixed_chars.append(LATIN_TO_CYRILLIC_HOMOGLYPHS[char])
+            if char in LATIN_TO_CYRILLIC_MAP:
+                fixed_chars.append(LATIN_TO_CYRILLIC_MAP[char])
             else:
                 fixed_chars.append(char)
         return "".join(fixed_chars)
@@ -90,8 +105,8 @@ def fix_word_homoglyphs(word: str) -> str:
         # Dominant script is Latin, replace Cyrillic homoglyphs with Latin
         fixed_chars = []
         for char in word:
-            if char in CYRILLIC_TO_LATIN_HOMOGLYPHS:
-                fixed_chars.append(CYRILLIC_TO_LATIN_HOMOGLYPHS[char])
+            if char in CYRILLIC_TO_LATIN_MAP:
+                fixed_chars.append(CYRILLIC_TO_LATIN_MAP[char])
             else:
                 fixed_chars.append(char)
         return "".join(fixed_chars)
