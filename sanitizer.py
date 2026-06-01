@@ -123,9 +123,11 @@ def analyze_text(
     if check_cjk:
         cjk_found = RE_CJK.findall(text)
         if cjk_found:
+            cjk_set = sorted(set(cjk_found))
+            cjk_details = ", ".join(f"'{c}' [U+{ord(c):04X}]" for c in cjk_set)
             violations.append({
                 "type": "cjk",
-                "message": f"Found CJK character(s): '{''.join(cjk_found)}'",
+                "message": f"Found CJK character(s): {cjk_details}",
                 "chars": set(cjk_found)
             })
 
@@ -135,9 +137,24 @@ def analyze_text(
         words = re.findall(r"[a-zA-Zа-яА-ЯёЁ]+", text)
         mixed_words = [w for w in words if check_word_mixed(w)]
         if mixed_words:
+            mixed_details = []
+            for w in mixed_words:
+                cyr_chars = RE_CYRILLIC.findall(w)
+                lat_chars = RE_LATIN.findall(w)
+                if len(cyr_chars) > len(lat_chars):
+                    # Latin characters are the anomalies
+                    offenders = sorted(set(lat_chars))
+                    offender_details = ", ".join(f"'{c}' [U+{ord(c):04X}]" for c in offenders)
+                    mixed_details.append(f"{repr(w)} (contains Latin: {offender_details})")
+                else:
+                    # Cyrillic characters are the anomalies
+                    offenders = sorted(set(cyr_chars))
+                    offender_details = ", ".join(f"'{c}' [U+{ord(c):04X}]" for c in offenders)
+                    mixed_details.append(f"{repr(w)} (contains Cyrillic: {offender_details})")
+            
             violations.append({
                 "type": "mixed_script",
-                "message": f"Mixed script word(s): {', '.join(repr(w) for w in mixed_words)}",
+                "message": f"Mixed script word(s): {', '.join(mixed_details)}",
                 "words": mixed_words
             })
 
@@ -175,17 +192,21 @@ def analyze_text(
     if lang == "ru":
         lat_found = RE_LATIN.findall(text)
         if lat_found:
+            lat_set = sorted(set(lat_found))
+            lat_details = ", ".join(f"'{c}' [U+{ord(c):04X}]" for c in lat_set)
             violations.append({
                 "type": "foreign_script",
-                "message": f"Found Latin character(s) in Russian-only mode: '{''.join(sorted(set(lat_found)))}'",
+                "message": f"Found Latin character(s) in Russian-only mode: {lat_details}",
                 "chars": set(lat_found)
             })
     elif lang == "en":
         cyr_found = RE_CYRILLIC.findall(text)
         if cyr_found:
+            cyr_set = sorted(set(cyr_found))
+            cyr_details = ", ".join(f"'{c}' [U+{ord(c):04X}]" for c in cyr_set)
             violations.append({
                 "type": "foreign_script",
-                "message": f"Found Cyrillic character(s) in English-only mode: '{''.join(sorted(set(cyr_found)))}'",
+                "message": f"Found Cyrillic character(s) in English-only mode: {cyr_details}",
                 "chars": set(cyr_found)
             })
 
