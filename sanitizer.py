@@ -5,6 +5,7 @@ Supports:
 1. Mixed script word detection (Latin in Cyrillic, and vice versa).
 2. CJK (Chinese, Japanese, Korean) character detection.
 3. LLM-typical generation bugs (text loops, codeblocks, placeholders).
+4. Language enforcement (Russian-only, English-only).
 """
 from __future__ import annotations
 
@@ -60,7 +61,13 @@ def check_word_mixed(word: str) -> bool:
     return has_cyr and has_lat
 
 
-def analyze_text(text: str, check_mixed: bool = True, check_cjk: bool = True, check_llm: bool = True) -> list[dict]:
+def analyze_text(
+    text: str,
+    check_mixed: bool = True,
+    check_cjk: bool = True,
+    check_llm: bool = True,
+    lang: str | None = None
+) -> list[dict]:
     """Analyze text and return a list of violations with their categories and details."""
     violations = []
     if not text:
@@ -77,7 +84,7 @@ def analyze_text(text: str, check_mixed: bool = True, check_cjk: bool = True, ch
             })
 
     # 2. Check Mixed Script (Latin inside Cyrillic words, and vice versa)
-    if check_mixed:
+    if check_mixed and not lang:
         # Split by alphabetic sequences to analyze individual words
         words = re.findall(r"[a-zA-Zа-яА-ЯёЁ]+", text)
         mixed_words = [w for w in words if check_word_mixed(w)]
@@ -118,6 +125,24 @@ def analyze_text(text: str, check_mixed: bool = True, check_cjk: bool = True, ch
                 "match": loop_matches_full
             })
 
+    # 4. Check Language constraints (Russian-only / English-only)
+    if lang == "ru":
+        lat_found = RE_LATIN.findall(text)
+        if lat_found:
+            violations.append({
+                "type": "foreign_script",
+                "message": f"Found Latin character(s) in Russian-only mode: '{''.join(sorted(set(lat_found)))}'",
+                "chars": set(lat_found)
+            })
+    elif lang == "en":
+        cyr_found = RE_CYRILLIC.findall(text)
+        if cyr_found:
+            violations.append({
+                "type": "foreign_script",
+                "message": f"Found Cyrillic character(s) in English-only mode: '{''.join(sorted(set(cyr_found)))}'",
+                "chars": set(cyr_found)
+            })
+
     return violations
 
 
@@ -125,18 +150,23 @@ def format_highlighted(text: str, violations: list[dict]) -> str:
     """Return a string with ANSI colored highlights showing where errors are located."""
     cjk_chars = set()
     mixed_words = set()
+    foreign_chars = set()
     
     for v in violations:
         if v["type"] == "cjk":
             cjk_chars.update(v["chars"])
         elif v["type"] == "mixed_script":
             mixed_words.update(v["words"])
+        elif v["type"] == "foreign_script":
+            foreign_chars.update(v["chars"])
 
-    # First, highlight CJK characters
+    # First, highlight CJK and foreign characters
     highlighted = ""
     for char in text:
         if char in cjk_chars:
             highlighted += f"{COLOR_YELLOW}{COLOR_BOLD}{char}{COLOR_RESET}"
+        elif char in foreign_chars:
+            highlighted += f"{COLOR_RED}{COLOR_BOLD}{char}{COLOR_RESET}"
         else:
             highlighted += char
 
@@ -168,13 +198,20 @@ def format_highlighted(text: str, violations: list[dict]) -> str:
     return highlighted
 
 
-def process_txt(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, check_llm: bool) -> list[str] | None:
+def process_txt(
+    input_data: str,
+    mode: str,
+    check_mixed: bool,
+    check_cjk: bool,
+    check_llm: bool,
+    lang: str | None = None
+) -> list[str] | None:
     lines = input_data.splitlines()
     clean_lines = []
     has_violations_any = False
 
     for idx, line in enumerate(lines, 1):
-        violations = analyze_text(line, check_mixed, check_cjk, check_llm)
+        violations = analyze_text(line, check_mixed, check_cjk, check_llm, lang)
         if violations:
             has_violations_any = True
             if mode == "report":
@@ -193,7 +230,14 @@ def process_txt(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, 
     return clean_lines
 
 
-def process_csv(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, check_llm: bool) -> list[list[str]] | None:
+def process_csv(
+    input_data: str,
+    mode: str,
+    check_mixed: bool,
+    check_cjk: bool,
+    check_llm: bool,
+    lang: str | None = None
+) -> list[list[str]] | None:
     reader = csv.reader(io.StringIO(input_data))
     clean_rows = []
     has_violations_any = False
@@ -204,7 +248,7 @@ def process_csv(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, 
         row_violations = []
 
         for cell in row:
-            violations = analyze_text(cell, check_mixed, check_cjk, check_llm)
+            violations = analyze_text(cell, check_mixed, check_cjk, check_llm, lang)
             if violations:
                 row_has_violation = True
                 has_violations_any = True
@@ -230,7 +274,14 @@ def process_csv(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, 
     return clean_rows
 
 
-def process_json(input_data: str, mode: str, check_mixed: bool, check_cjk: bool, check_llm: bool) -> Any | None:
+def process_json(
+    input_data: str,
+    mode: str,
+    check_mixed: bool,
+    check_cjk: bool,
+    check_llm: bool,
+    lang: str | None = None
+) -> Any | None:
     try:
         obj = json.loads(input_data)
     except json.JSONDecodeError as e:
@@ -243,7 +294,7 @@ def process_json(input_data: str, mode: str, check_mixed: bool, check_cjk: bool,
         nonlocal has_violations_any
         
         if isinstance(node, str):
-            violations = analyze_text(node, check_mixed, check_cjk, check_llm)
+            violations = analyze_text(node, check_mixed, check_cjk, check_llm, lang)
             if violations:
                 has_violations_any = True
                 if mode == "report":
@@ -268,7 +319,7 @@ def process_json(input_data: str, mode: str, check_mixed: bool, check_cjk: bool,
             for k, val in node.items():
                 sub_path = f"{path}.{k}" if path else k
                 # Check key itself for mixed-script anomalies
-                key_violations = analyze_text(k, check_mixed, check_cjk, check_llm)
+                key_violations = analyze_text(k, check_mixed, check_cjk, check_llm, lang)
                 if key_violations:
                     has_violations_any = True
                     if mode == "report":
@@ -313,6 +364,10 @@ def main() -> int:
     parser.add_argument(
         "-f", "--format", choices=["txt", "csv", "json"], default=None,
         help="Explicit input format. Optional for files, highly recommended for stdin ('-')."
+    )
+    parser.add_argument(
+        "-l", "--lang", choices=["ru", "en"], default=None,
+        help="Enforce single-language mode: 'ru' for Russian-only, 'en' for English-only. Flags any foreign characters."
     )
     parser.add_argument(
         "--check-cjk", action="store_true", default=True,
@@ -360,14 +415,14 @@ def main() -> int:
 
     # Process data according to extension
     if file_ext == ".json":
-        result = process_json(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm)
+        result = process_json(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang)
         if args.mode == "clean" and result is not None:
             with open(args.output, "w", encoding="utf-8") as out:
                 json.dump(result, out, ensure_ascii=False, indent=2)
             print(f"{COLOR_GREEN}✔ Sanitized JSON written to {args.output}{COLOR_RESET}")
 
     elif file_ext == ".csv":
-        result = process_csv(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm)
+        result = process_csv(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang)
         if args.mode == "clean" and result is not None:
             with open(args.output, "w", encoding="utf-8", newline="") as out:
                 writer = csv.writer(out)
@@ -375,7 +430,7 @@ def main() -> int:
             print(f"{COLOR_GREEN}✔ Sanitized CSV written to {args.output}{COLOR_RESET}")
 
     else:  # defaults to text processing
-        result = process_txt(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm)
+        result = process_txt(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang)
         if args.mode == "clean" and result is not None:
             with open(args.output, "w", encoding="utf-8") as out:
                 out.write("\n".join(result) + "\n")
