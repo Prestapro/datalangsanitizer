@@ -83,7 +83,8 @@ options:
                         to filter out bad rows/lines
   -o OUTPUT, --output OUTPUT
                         Output path for sanitized data (required for clean
-                        mode, defaults to stdout)
+                        mode) or report logs (appended with timestamp in
+                        report mode)
   -f {txt,csv,json}, --format {txt,csv,json}
                         Explicit input format. Optional for files, highly
                         recommended for stdin ('-').

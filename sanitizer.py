@@ -256,6 +256,7 @@ def process_txt(
     lines = input_data.splitlines()
     clean_lines = []
     has_violations_any = False
+    report_lines = []
 
     for idx, line in enumerate(lines, 1):
         processed_line = line
@@ -267,19 +268,26 @@ def process_txt(
             has_violations_any = True
             if mode == "report":
                 hl = format_highlighted(processed_line, violations)
-                print(f"{COLOR_BOLD}Line {idx:4d}:{COLOR_RESET} {hl}")
+                msg = f"Line {idx:4d}: {hl}"
+                print(f"{COLOR_BOLD}{msg}{COLOR_RESET}")
+                report_lines.append(f"Line {idx:4d}: {processed_line}")
                 for v in violations:
                     print(f"            - {v['message']}")
+                    report_lines.append(f"            - {v['message']}")
         else:
             if mode == "clean":
                 clean_lines.append(processed_line)
             elif mode == "report" and auto_fix and processed_line != line:
-                print(f"{COLOR_GREEN}Line {idx:4d} corrected:{COLOR_RESET} {line} -> {processed_line}")
+                msg = f"Line {idx:4d} corrected: {line} -> {processed_line}"
+                print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+                report_lines.append(msg)
 
     if mode == "report":
         if not has_violations_any:
-            print(f"{COLOR_GREEN}✔ No anomalies detected in text file.{COLOR_RESET}")
-        return None
+            msg = "✔ No anomalies detected in text file."
+            print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+            report_lines.append(msg)
+        return report_lines
     return clean_lines
 
 
@@ -295,6 +303,7 @@ def process_csv(
     reader = csv.reader(io.StringIO(input_data))
     clean_rows = []
     has_violations_any = False
+    report_lines = []
 
     for idx, row in enumerate(reader, 1):
         row_has_violation = False
@@ -320,19 +329,26 @@ def process_csv(
 
         if row_has_violation:
             if mode == "report":
-                print(f"{COLOR_BOLD}Row {idx:4d}:{COLOR_RESET} {', '.join(highlighted_row)}")
+                msg = f"Row {idx:4d}: {', '.join(highlighted_row)}"
+                print(f"{COLOR_BOLD}{msg}{COLOR_RESET}")
+                report_lines.append(msg)
                 for v in row_violations:
                     print(f"           - {v['message']}")
+                    report_lines.append(f"           - {v['message']}")
         else:
             if mode == "clean":
                 clean_rows.append(processed_row)
             elif mode == "report" and auto_fix and processed_row != row:
-                print(f"{COLOR_GREEN}Row {idx:4d} corrected:{COLOR_RESET} {', '.join(row)} -> {', '.join(processed_row)}")
+                msg = f"Row {idx:4d} corrected: {', '.join(row)} -> {', '.join(processed_row)}"
+                print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+                report_lines.append(msg)
 
     if mode == "report":
         if not has_violations_any:
-            print(f"{COLOR_GREEN}✔ No anomalies detected in CSV.{COLOR_RESET}")
-        return None
+            msg = "✔ No anomalies detected in CSV."
+            print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+            report_lines.append(msg)
+        return report_lines
     return clean_rows
 
 
@@ -352,6 +368,7 @@ def process_json(
         return None
 
     has_violations_any = False
+    report_lines = []
 
     def clean_node(node: Any, path: str = "") -> tuple[Any, bool]:
         nonlocal has_violations_any
@@ -366,13 +383,18 @@ def process_json(
                 has_violations_any = True
                 if mode == "report":
                     hl = format_highlighted(processed_node, violations)
-                    print(f"{COLOR_BOLD}JSON Node [{path}]:{COLOR_RESET} {hl}")
+                    msg = f"JSON Node [{path}]: {hl}"
+                    print(f"{COLOR_BOLD}{msg}{COLOR_RESET}")
+                    report_lines.append(msg)
                     for v in violations:
                         print(f"            - {v['message']}")
+                        report_lines.append(f"            - {v['message']}")
                 return None, True  # Filter out in clean mode
             
             if mode == "report" and auto_fix and processed_node != node:
-                print(f"{COLOR_GREEN}JSON Node [{path}] corrected:{COLOR_RESET} {repr(node)} -> {repr(processed_node)}")
+                msg = f"JSON Node [{path}] corrected: {repr(node)} -> {repr(processed_node)}"
+                print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+                report_lines.append(msg)
             return processed_node, False
 
         elif isinstance(node, list):
@@ -398,13 +420,18 @@ def process_json(
                     has_violations_any = True
                     if mode == "report":
                         hl = format_highlighted(processed_k, key_violations)
-                        print(f"{COLOR_BOLD}JSON Key [{sub_path}]:{COLOR_RESET} {hl}")
+                        msg = f"JSON Key [{sub_path}]: {hl}"
+                        print(f"{COLOR_BOLD}{msg}{COLOR_RESET}")
+                        report_lines.append(msg)
                         for v in key_violations:
                             print(f"            - {v['message']}")
+                            report_lines.append(f"            - {v['message']}")
                     continue # Skip this key in clean mode
                 
                 if mode == "report" and auto_fix and processed_k != k:
-                    print(f"{COLOR_GREEN}JSON Key [{sub_path}] corrected:{COLOR_RESET} {repr(k)} -> {repr(processed_k)}")
+                    msg = f"JSON Key [{sub_path}] corrected: {repr(k)} -> {repr(processed_k)}"
+                    print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+                    report_lines.append(msg)
 
                 sub_val, is_bad = clean_node(val, sub_path)
                 if not is_bad:
@@ -417,9 +444,25 @@ def process_json(
 
     if mode == "report":
         if not has_violations_any:
-            print(f"{COLOR_GREEN}✔ No anomalies detected in JSON object.{COLOR_RESET}")
-        return None
+            msg = "✔ No anomalies detected in JSON object."
+            print(f"{COLOR_GREEN}{msg}{COLOR_RESET}")
+            report_lines.append(msg)
+        return report_lines
     return cleaned_obj
+
+
+def write_report_to_file(filepath: str, lines: list[str]) -> None:
+    """Append report lines to the specified file, stripping ANSI color codes, without overwriting."""
+    if not lines:
+        return
+    import datetime
+    # Strip ANSI escape codes
+    clean_lines = [re.sub(r"\033\[[0-9;]*m", "", line) for line in lines]
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    header = f"\n=== Report Run: {timestamp} ===\n"
+    
+    with open(filepath, "a", encoding="utf-8") as f:
+        f.write(header + "\n".join(clean_lines) + "\n")
 
 
 def main() -> int:
@@ -436,7 +479,7 @@ def main() -> int:
     )
     parser.add_argument(
         "-o", "--output", default=None,
-        help="Output path for sanitized data (required for clean mode, defaults to stdout)"
+        help="Output path for sanitized data (required for clean mode) or report logs (appended with timestamp in report mode)"
     )
     parser.add_argument(
         "-f", "--format", choices=["txt", "csv", "json"], default=None,
@@ -501,6 +544,9 @@ def main() -> int:
             with open(args.output, "w", encoding="utf-8") as out:
                 json.dump(result, out, ensure_ascii=False, indent=2)
             print(f"{COLOR_GREEN}✔ Sanitized JSON written to {args.output}{COLOR_RESET}")
+        elif args.mode == "report" and args.output and result:
+            write_report_to_file(args.output, result)
+            print(f"{COLOR_GREEN}✔ Report appended to {args.output}{COLOR_RESET}")
 
     elif file_ext == ".csv":
         result = process_csv(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang, args.auto_fix)
@@ -509,6 +555,9 @@ def main() -> int:
                 writer = csv.writer(out)
                 writer.writerows(result)
             print(f"{COLOR_GREEN}✔ Sanitized CSV written to {args.output}{COLOR_RESET}")
+        elif args.mode == "report" and args.output and result:
+            write_report_to_file(args.output, result)
+            print(f"{COLOR_GREEN}✔ Report appended to {args.output}{COLOR_RESET}")
 
     else:  # defaults to text processing
         result = process_txt(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang, args.auto_fix)
@@ -516,6 +565,9 @@ def main() -> int:
             with open(args.output, "w", encoding="utf-8") as out:
                 out.write("\n".join(result) + "\n")
             print(f"{COLOR_GREEN}✔ Sanitized text written to {args.output}{COLOR_RESET}")
+        elif args.mode == "report" and args.output and result:
+            write_report_to_file(args.output, result)
+            print(f"{COLOR_GREEN}✔ Report appended to {args.output}{COLOR_RESET}")
 
     return 0
 
