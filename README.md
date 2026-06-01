@@ -5,6 +5,7 @@ A lightweight, zero-dependency Python CLI tool to detect, highlight, and filter 
 ## Features
 
 - **Homoglyph & Mixed-Script Detection:** Finds Latin characters accidentally typed inside Cyrillic words (e.g., `aбсолютная` with Latin `a`, `санатoрно` with Latin `o`) and vice versa.
+- **Auto-Correction (Auto-Fix):** Automatically corrects mixed-script homoglyphs by converting them to the dominant script of the word (e.g. converting `грузоперевозкa` with Latin `a` into a pure Cyrillic word, and retaining it in clean output instead of deleting the line).
 - **CJK Leak Detection:** Detects Chinese, Japanese, and Korean characters in Cyrillic/Latin text fields (often leaked during LLM translation or data scraping).
 - **LLM Bug & Artifact Detection:**
   - Repetitive word loops (hallucination patterns).
@@ -53,11 +54,19 @@ Remove any lines or JSON objects containing contaminated text and write to a cle
 python3 sanitizer.py input.json --mode clean --output clean_output.json
 ```
 
+### 3. Auto-Fix Mode (Correcting homoglyphs)
+
+To automatically correct identical homoglyphs to their correct counterpart depending on the dominant script in each word:
+
+```bash
+python3 sanitizer.py input.csv --auto-fix --mode clean --output clean_output.csv
+```
+
 ### Options
 
 ```
 usage: sanitizer.py [-h] [-m {report,clean}] [-o OUTPUT] [-f {txt,csv,json}]
-                    [-l {ru,en}] [--check-cjk] [--no-check-cjk]
+                    [-l {ru,en}] [--auto-fix] [--check-cjk] [--no-check-cjk]
                     [--check-mixed] [--no-check-mixed] [--check-llm]
                     [--no-check-llm]
                     [input]
@@ -81,6 +90,8 @@ options:
   -l {ru,en}, --lang {ru,en}
                         Enforce single-language mode: 'ru' for Russian-only,
                         'en' for English-only. Flags any foreign characters.
+  --auto-fix            Automatically fix mixed-script homoglyphs to the
+                        dominant script of the word.
   --check-cjk           Enable CJK character checks (default: True)
   --no-check-cjk
   --check-mixed         Enable mixed script checks (default: True)
@@ -92,4 +103,5 @@ options:
 ## License
 
 MIT License.
+
 

@@ -61,6 +61,52 @@ def check_word_mixed(word: str) -> bool:
     return has_cyr and has_lat
 
 
+LATIN_TO_CYRILLIC_HOMOGLYPHS = {
+    'a': 'а', 'c': 'с', 'e': 'е', 'o': 'о', 'p': 'р', 'x': 'х', 'y': 'у',
+    'A': 'А', 'B': 'В', 'C': 'С', 'E': 'Е', 'H': 'Н', 'K': 'К', 'M': 'М',
+    'O': 'О', 'P': 'Р', 'T': 'Т', 'X': 'Х', 'Y': 'У'
+}
+CYRILLIC_TO_LATIN_HOMOGLYPHS = {v: k for k, v in LATIN_TO_CYRILLIC_HOMOGLYPHS.items()}
+
+
+def fix_word_homoglyphs(word: str) -> str:
+    """Fix mixed script homoglyphs in a single word if a dominant script exists."""
+    cyr_count = len(RE_CYRILLIC.findall(word))
+    lat_count = len(RE_LATIN.findall(word))
+    
+    if cyr_count == 0 or lat_count == 0:
+        return word
+        
+    if cyr_count > lat_count:
+        # Dominant script is Cyrillic, replace Latin homoglyphs with Cyrillic
+        fixed_chars = []
+        for char in word:
+            if char in LATIN_TO_CYRILLIC_HOMOGLYPHS:
+                fixed_chars.append(LATIN_TO_CYRILLIC_HOMOGLYPHS[char])
+            else:
+                fixed_chars.append(char)
+        return "".join(fixed_chars)
+    elif lat_count > cyr_count:
+        # Dominant script is Latin, replace Cyrillic homoglyphs with Latin
+        fixed_chars = []
+        for char in word:
+            if char in CYRILLIC_TO_LATIN_HOMOGLYPHS:
+                fixed_chars.append(CYRILLIC_TO_LATIN_HOMOGLYPHS[char])
+            else:
+                fixed_chars.append(char)
+        return "".join(fixed_chars)
+        
+    return word
+
+
+def fix_text_homoglyphs(text: str) -> str:
+    """Find and fix mixed-script words containing homoglyphs in the given text."""
+    def repl(match):
+        word = match.group(0)
+        return fix_word_homoglyphs(word)
+    return re.sub(r"[a-zA-Zа-яА-ЯёЁ]+", repl, text)
+
+
 def analyze_text(
     text: str,
     check_mixed: bool = True,
@@ -204,24 +250,31 @@ def process_txt(
     check_mixed: bool,
     check_cjk: bool,
     check_llm: bool,
-    lang: str | None = None
+    lang: str | None = None,
+    auto_fix: bool = False
 ) -> list[str] | None:
     lines = input_data.splitlines()
     clean_lines = []
     has_violations_any = False
 
     for idx, line in enumerate(lines, 1):
-        violations = analyze_text(line, check_mixed, check_cjk, check_llm, lang)
+        processed_line = line
+        if auto_fix:
+            processed_line = fix_text_homoglyphs(line)
+
+        violations = analyze_text(processed_line, check_mixed, check_cjk, check_llm, lang)
         if violations:
             has_violations_any = True
             if mode == "report":
-                hl = format_highlighted(line, violations)
+                hl = format_highlighted(processed_line, violations)
                 print(f"{COLOR_BOLD}Line {idx:4d}:{COLOR_RESET} {hl}")
                 for v in violations:
                     print(f"            - {v['message']}")
         else:
             if mode == "clean":
-                clean_lines.append(line)
+                clean_lines.append(processed_line)
+            elif mode == "report" and auto_fix and processed_line != line:
+                print(f"{COLOR_GREEN}Line {idx:4d} corrected:{COLOR_RESET} {line} -> {processed_line}")
 
     if mode == "report":
         if not has_violations_any:
@@ -236,7 +289,8 @@ def process_csv(
     check_mixed: bool,
     check_cjk: bool,
     check_llm: bool,
-    lang: str | None = None
+    lang: str | None = None,
+    auto_fix: bool = False
 ) -> list[list[str]] | None:
     reader = csv.reader(io.StringIO(input_data))
     clean_rows = []
@@ -246,17 +300,23 @@ def process_csv(
         row_has_violation = False
         highlighted_row = []
         row_violations = []
+        processed_row = []
 
         for cell in row:
-            violations = analyze_text(cell, check_mixed, check_cjk, check_llm, lang)
+            processed_cell = cell
+            if auto_fix:
+                processed_cell = fix_text_homoglyphs(cell)
+            processed_row.append(processed_cell)
+
+            violations = analyze_text(processed_cell, check_mixed, check_cjk, check_llm, lang)
             if violations:
                 row_has_violation = True
                 has_violations_any = True
-                hl = format_highlighted(cell, violations)
+                hl = format_highlighted(processed_cell, violations)
                 highlighted_row.append(hl)
                 row_violations.extend(violations)
             else:
-                highlighted_row.append(cell)
+                highlighted_row.append(processed_cell)
 
         if row_has_violation:
             if mode == "report":
@@ -265,7 +325,9 @@ def process_csv(
                     print(f"           - {v['message']}")
         else:
             if mode == "clean":
-                clean_rows.append(row)
+                clean_rows.append(processed_row)
+            elif mode == "report" and auto_fix and processed_row != row:
+                print(f"{COLOR_GREEN}Row {idx:4d} corrected:{COLOR_RESET} {', '.join(row)} -> {', '.join(processed_row)}")
 
     if mode == "report":
         if not has_violations_any:
@@ -280,7 +342,8 @@ def process_json(
     check_mixed: bool,
     check_cjk: bool,
     check_llm: bool,
-    lang: str | None = None
+    lang: str | None = None,
+    auto_fix: bool = False
 ) -> Any | None:
     try:
         obj = json.loads(input_data)
@@ -294,16 +357,23 @@ def process_json(
         nonlocal has_violations_any
         
         if isinstance(node, str):
-            violations = analyze_text(node, check_mixed, check_cjk, check_llm, lang)
+            processed_node = node
+            if auto_fix:
+                processed_node = fix_text_homoglyphs(node)
+
+            violations = analyze_text(processed_node, check_mixed, check_cjk, check_llm, lang)
             if violations:
                 has_violations_any = True
                 if mode == "report":
-                    hl = format_highlighted(node, violations)
+                    hl = format_highlighted(processed_node, violations)
                     print(f"{COLOR_BOLD}JSON Node [{path}]:{COLOR_RESET} {hl}")
                     for v in violations:
                         print(f"            - {v['message']}")
                 return None, True  # Filter out in clean mode
-            return node, False
+            
+            if mode == "report" and auto_fix and processed_node != node:
+                print(f"{COLOR_GREEN}JSON Node [{path}] corrected:{COLOR_RESET} {repr(node)} -> {repr(processed_node)}")
+            return processed_node, False
 
         elif isinstance(node, list):
             cleaned_list = []
@@ -318,20 +388,27 @@ def process_json(
             cleaned_dict = {}
             for k, val in node.items():
                 sub_path = f"{path}.{k}" if path else k
+                processed_k = k
+                if auto_fix:
+                    processed_k = fix_text_homoglyphs(k)
+
                 # Check key itself for mixed-script anomalies
-                key_violations = analyze_text(k, check_mixed, check_cjk, check_llm, lang)
+                key_violations = analyze_text(processed_k, check_mixed, check_cjk, check_llm, lang)
                 if key_violations:
                     has_violations_any = True
                     if mode == "report":
-                        hl = format_highlighted(k, key_violations)
+                        hl = format_highlighted(processed_k, key_violations)
                         print(f"{COLOR_BOLD}JSON Key [{sub_path}]:{COLOR_RESET} {hl}")
                         for v in key_violations:
                             print(f"            - {v['message']}")
                     continue # Skip this key in clean mode
                 
+                if mode == "report" and auto_fix and processed_k != k:
+                    print(f"{COLOR_GREEN}JSON Key [{sub_path}] corrected:{COLOR_RESET} {repr(k)} -> {repr(processed_k)}")
+
                 sub_val, is_bad = clean_node(val, sub_path)
                 if not is_bad:
-                    cleaned_dict[k] = sub_val
+                    cleaned_dict[processed_k] = sub_val
             return cleaned_dict, False
 
         return node, False
@@ -368,6 +445,10 @@ def main() -> int:
     parser.add_argument(
         "-l", "--lang", choices=["ru", "en"], default=None,
         help="Enforce single-language mode: 'ru' for Russian-only, 'en' for English-only. Flags any foreign characters."
+    )
+    parser.add_argument(
+        "--auto-fix", action="store_true", default=False,
+        help="Automatically fix mixed-script homoglyphs to the dominant script of the word."
     )
     parser.add_argument(
         "--check-cjk", action="store_true", default=True,
@@ -415,14 +496,14 @@ def main() -> int:
 
     # Process data according to extension
     if file_ext == ".json":
-        result = process_json(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang)
+        result = process_json(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang, args.auto_fix)
         if args.mode == "clean" and result is not None:
             with open(args.output, "w", encoding="utf-8") as out:
                 json.dump(result, out, ensure_ascii=False, indent=2)
             print(f"{COLOR_GREEN}✔ Sanitized JSON written to {args.output}{COLOR_RESET}")
 
     elif file_ext == ".csv":
-        result = process_csv(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang)
+        result = process_csv(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang, args.auto_fix)
         if args.mode == "clean" and result is not None:
             with open(args.output, "w", encoding="utf-8", newline="") as out:
                 writer = csv.writer(out)
@@ -430,7 +511,7 @@ def main() -> int:
             print(f"{COLOR_GREEN}✔ Sanitized CSV written to {args.output}{COLOR_RESET}")
 
     else:  # defaults to text processing
-        result = process_txt(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang)
+        result = process_txt(input_data, args.mode, args.check_mixed, args.check_cjk, args.check_llm, args.lang, args.auto_fix)
         if args.mode == "clean" and result is not None:
             with open(args.output, "w", encoding="utf-8") as out:
                 out.write("\n".join(result) + "\n")
