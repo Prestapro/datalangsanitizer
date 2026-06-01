@@ -11,6 +11,7 @@ A lightweight, zero-dependency Python CLI tool to detect, highlight, and filter 
   - Leaked Markdown code blocks (e.g., ````json`).
   - Unclosed markdown tags.
   - Placeholder markers (e.g. `[placeholder]`, `<insert text>`, `TODO`).
+- **Single-Language Enforcement:** Ensure the input is Russian-only (`--lang ru`) or English-only (`--lang en`), highlighting any foreign characters.
 - **Two Operational Modes:**
   - **Report Mode (default):** Highlights anomalies in the terminal with colored indicators and exact Unicode code point details.
   - **Clean Mode:** Removes contaminated lines/records and outputs a sanitized file.
@@ -55,25 +56,40 @@ python3 sanitizer.py input.json --mode clean --output clean_output.json
 ### Options
 
 ```
-usage: sanitizer.py [-h] [-m {report,clean}] [-o OUTPUT] [--check-cjk]
-                    [--check-mixed] [--check-llm]
+usage: sanitizer.py [-h] [-m {report,clean}] [-o OUTPUT] [-f {txt,csv,json}]
+                    [-l {ru,en}] [--check-cjk] [--no-check-cjk]
+                    [--check-mixed] [--no-check-mixed] [--check-llm]
+                    [--no-check-llm]
                     [input]
 
+DataLangSanitizer — Clean datasets from homoglyphs, CJK leaks, and LLM loops.
+
 positional arguments:
-  input                 Path to the input file (txt, csv, json) or stdin
+  input                 Path to the input file (txt, csv, json) or stdin ('-')
 
 options:
   -h, --help            show this help message and exit
   -m {report,clean}, --mode {report,clean}
-                        Operation mode: 'report' to highlight bugs, 'clean'
-                        to filter them out
+                        Operation mode: 'report' to print highlights, 'clean'
+                        to filter out bad rows/lines
   -o OUTPUT, --output OUTPUT
-                        Output path for clean mode
-  --check-cjk           Enable Chinese/Japanese/Korean character checks
-  --check-mixed         Enable mixed script (Latin in Cyrillic) checks
-  --check-llm           Enable LLM-typical artifacts (loops, codeblocks) checks
+                        Output path for sanitized data (required for clean
+                        mode, defaults to stdout)
+  -f {txt,csv,json}, --format {txt,csv,json}
+                        Explicit input format. Optional for files, highly
+                        recommended for stdin ('-').
+  -l {ru,en}, --lang {ru,en}
+                        Enforce single-language mode: 'ru' for Russian-only,
+                        'en' for English-only. Flags any foreign characters.
+  --check-cjk           Enable CJK character checks (default: True)
+  --no-check-cjk
+  --check-mixed         Enable mixed script checks (default: True)
+  --no-check-mixed
+  --check-llm           Enable LLM generation artifact checks (default: True)
+  --no-check-llm
 ```
 
 ## License
 
 MIT License.
+
